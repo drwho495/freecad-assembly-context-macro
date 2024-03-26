@@ -1,0 +1,176 @@
+#                                                              #
+#   Assembly Context Creator (works for Default Assembly WB)   #
+#                                                              #
+
+import FreeCAD,FreeCADGui,Part
+from PySide import QtCore,QtGui
+'''
+creating a dialog window in the task panel
+'''
+path_to_ui = os.path.dirname(__file__) + "/SketcherSettings.ui"
+
+COPYABLE_OBJECT_TYPES = ["Body", "Part"]
+
+def getLinkedDoc(obj):
+	document = None
+	
+	if hasattr(obj, "LinkedObject"):
+		document = obj.LinkedObject.Document
+	else:
+		for child in obj.OutList:
+			if hasattr(child, "LinkedObject"):
+				document = child.LinkedObject.Document
+				continue
+				
+	return document
+
+def getCopyableObjectsInSelection():
+	sel = Gui.Selection.getSelection()[0].OutList
+	objects = []
+	
+	for obj in sel:
+		if type(obj).__name__ in COPYABLE_OBJECT_TYPES:
+			objects.append(obj)
+	return objects
+
+
+def addOffsets(objects, x, y, z):
+	print(x, " ", y, " ", z)
+	
+	for obj in objects:
+		obj.Placement.Base.x -= x
+		obj.Placement.Base.y -= y
+		obj.Placement.Base.z -= z
+
+def createGroup(objects, target_document):
+	if FreeCAD.ActiveDocument.getObjectsByLabel("AssemblyContext"):
+		App.ActiveDocument.removeObject(FreeCAD.ActiveDocument.getObjectsByLabel("AssemblyContext")[0].Name)
+
+	group = App.ActiveDocument.addObject("App::DocumentObjectGroup", "Group")
+	
+	for obj in objects:
+		group.addObject(obj)
+	group.Label = "AssemblyContext"
+	move_group_to_doc(target_document, group, True)
+
+def _removeChildren(obj):
+	for child in obj.OutList:
+		App.ActiveDocument.removeObject(child.Name)
+
+def createContext(target_document, objects, offsetX, offsetY, offsetZ):
+	objects = App.ActiveDocument.copyObject(objects, True)
+	addOffsets(objects, offsetX, offsetY, offsetZ)
+	createGroup(objects, target_document)
+
+def _copy_selection_test():
+	objects = App.ActiveDocument.copyObject(Gui.Selection.getSelection(), True)
+	createGroup(objects)
+	
+def move_group_to_doc(dest_doc, group, deleteOriginal):
+	# Get the source and destination documents
+	source_doc = FreeCAD.ActiveDocument
+
+	# Copy the object to the destination document
+	new_obj = dest_doc.copyObject(group, True)
+
+	# Delete the original object from the source document
+	# source_doc.removeObject(obj.Name)
+	if deleteOriginal:
+		for obj in group.OutList:
+			if obj.OutList:
+				_removeChildren(obj)
+			source_doc.removeObject(obj.Name)
+		source_doc.removeObject(group.Name)
+
+def getPartParent(obj):
+	final_obj = None
+	
+	if type(obj).__name__ == "Part":
+		return obj
+	
+	for parent in obj.InList:
+		if(type(parent).__name__ == "Part"):
+			final_obj = parent
+		else:
+			print(type(parent).__name__)
+	return final_obj
+
+class DefinePanel:
+	def __init__(self):
+		self.form = dialogFenster()
+                    
+class dialogFenster(QtGui.QWidget):
+
+	def __init__(self):
+		self.current_selection = 1
+		self.first_selection = None
+		self.objects = []
+		self.edit_selection = None
+		super().__init__() 
+		self.setWindowTitle("Context Creator for Assembly 3, 4 and Default.")
+
+		self.createGridLayout()
+        
+		windowLayout = QtGui.QVBoxLayout()
+		windowLayout.addWidget(self.horizontalGroupBox)
+		self.setLayout(windowLayout)
+		self.show()
+
+	def createGridLayout(self):
+		self.horizontalGroupBox = QtGui.QGroupBox("Assembly Context Creator")
+		layout = QtGui.QGridLayout()
+		
+		label = QtGui.QLabel(self.horizontalGroupBox)
+		label.setText("In Assembly 3, select the 'Parts' object,\n In the default assembly wb, select the 'Assembly' Object")
+
+		self.PB_01= QtGui.QPushButton(self.horizontalGroupBox)
+		self.PB_01.setText("Select the Assembly Part")
+		self.PB_01.clicked.connect(self.SelectPartButton) # slot: "PB 01"
+		layout.addWidget(self.PB_01,1,0)
+		layout.addWidget(label, 0,0)
+        
+		self.horizontalGroupBox.setLayout(layout)
+
+	def SelectPartButton(self): # slot: PushButton
+		''' Push Button 01 clicked  '''
+		print('Select Button Pressed')
+		
+		selection = Gui.Selection.getSelection()
+		if selection:
+			if self.current_selection == 1:
+				self.objects = getCopyableObjectsInSelection()
+				if len(self.objects) == 0:
+					print("No suitable objects could be found. The suitable object types are: ", COPYABLE_OBJECT_TYPES, "\n")
+					print("To add a datatype, change the 'COPYABLE_OBJECT_TYPES' variable in this macro.")
+					print(self.objects)
+				else:
+					self.PB_01.setText("Select the Part to Edit")
+					self.current_selection = 2
+			else:
+				self.edit_selection = selection[0]
+				print(self.edit_selection.Name)
+				
+				#self.first_selection = getPartParent(self.first_selection)
+				
+				if(self.edit_selection is None):
+					print("You must select a part")
+				else:
+					if self.edit_selection in self.objects:
+						print("in objects")
+						self.objects.remove(self.edit_selection)
+					offsetX = self.edit_selection.Placement.Base.x
+					offsetY = self.edit_selection.Placement.Base.y
+					offsetZ = self.edit_selection.Placement.Base.z
+					target_document = getLinkedDoc(self.edit_selection)
+					
+					if target_document is None:
+						print("Could not locate the document of the original part.\n The selected part must be a link or have a link as a child")
+					else:
+						createContext(target_document, self.objects, offsetX, offsetY, offsetZ)
+				
+				FreeCADGui.Control.closeDialog()
+		else:
+			print("Nothing is selected!")
+
+panel=DefinePanel()
+FreeCADGui.Control.showDialog(panel)
