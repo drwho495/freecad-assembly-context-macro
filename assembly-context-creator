@@ -1,6 +1,6 @@
-#                                                              #
-#   Assembly Context Creator (works for Default Assembly WB)   #
-#                                                              #
+#                                                                       #
+#   Assembly Context Creator (works for Default Assembly WB, 3 and 4)   #
+#                                                                       #
 
 import FreeCAD,FreeCADGui,Part
 from PySide import QtCore,QtGui
@@ -9,7 +9,7 @@ creating a dialog window in the task panel
 '''
 path_to_ui = os.path.dirname(__file__) + "/SketcherSettings.ui"
 
-COPYABLE_OBJECT_TYPES = ["Body", "Part"]
+COPYABLE_OBJECT_TYPES = ["Body", "Part", "LinkedObject", "DocumentObject"]
 
 def getLinkedDoc(obj):
 	document = None
@@ -24,6 +24,21 @@ def getLinkedDoc(obj):
 				
 	return document
 
+def getLinkedObj(obj):
+	object = None
+	
+	if hasattr(obj, "LinkedObject"):
+		obj.LinkTransform = False
+		object = obj.LinkedObject
+	else:
+		for child in obj.OutList:
+			if hasattr(child, "LinkedObject"):
+				child.LinkTransform = False
+				object = child.LinkedObject
+				continue
+				
+	return object
+
 def getCopyableObjectsInSelection():
 	sel = Gui.Selection.getSelection()[0].OutList
 	objects = []
@@ -34,13 +49,8 @@ def getCopyableObjectsInSelection():
 	return objects
 
 
-def addOffsets(objects, x, y, z):
-	print(x, " ", y, " ", z)
-	
-	for obj in objects:
-		obj.Placement.Base.x -= x
-		obj.Placement.Base.y -= y
-		obj.Placement.Base.z -= z
+def addOffsets(objects,linked_obj, linked_placement):
+	linked_obj.Placement = linked_placement
 
 def createGroup(objects, target_document):
 	if FreeCAD.ActiveDocument.getObjectsByLabel("AssemblyContext"):
@@ -57,9 +67,9 @@ def _removeChildren(obj):
 	for child in obj.OutList:
 		App.ActiveDocument.removeObject(child.Name)
 
-def createContext(target_document, objects, offsetX, offsetY, offsetZ):
+def createContext(linkedObj, target_document, objects, linked_placement):
 	objects = App.ActiveDocument.copyObject(objects, True)
-	addOffsets(objects, offsetX, offsetY, offsetZ)
+	addOffsets(objects, linkedObj, linked_placement)
 	createGroup(objects, target_document)
 
 def _copy_selection_test():
@@ -157,16 +167,17 @@ class dialogFenster(QtGui.QWidget):
 				else:
 					if self.edit_selection in self.objects:
 						print("in objects")
-						self.objects.remove(self.edit_selection)
-					offsetX = self.edit_selection.Placement.Base.x
-					offsetY = self.edit_selection.Placement.Base.y
-					offsetZ = self.edit_selection.Placement.Base.z
+						#self.objects.remove(self.edit_selection)
+					linked_placement = self.edit_selection.Placement
 					target_document = getLinkedDoc(self.edit_selection)
+					linked_object = getLinkedObj(self.edit_selection)
+
+					print(linked_object.Placement)
 					
 					if target_document is None:
 						print("Could not locate the document of the original part.\n The selected part must be a link or have a link as a child")
 					else:
-						createContext(target_document, self.objects, offsetX, offsetY, offsetZ)
+						createContext(linked_object, target_document, self.objects, linked_placement)
 				
 				FreeCADGui.Control.closeDialog()
 		else:
