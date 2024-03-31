@@ -9,7 +9,20 @@ creating a dialog window in the task panel
 '''
 path_to_ui = os.path.dirname(__file__) + "/SketcherSettings.ui"
 
-COPYABLE_OBJECT_TYPES = ["Body", "Part", "LinkedObject", "DocumentObject"]
+COPYABLE_OBJECT_TYPES = ["Body", "Part", "LinkedObject", "DocumentObject", "Feature"]
+
+def getObjFromRefString(ref):
+	if "." in ref:
+		splitRef = ref.split(".")
+		print(splitRef[0])
+		document = splitRef[0]
+		splitRef.pop(0)
+		refObj = splitRef
+		refObj = ".".join(splitRef)
+		print(document)
+		print(refObj)
+		document = App.getDocument(document.replace("-", "_"))
+		return document.getObject(refObj)
 
 def getLinkedDoc(obj):
 	document = None
@@ -52,11 +65,15 @@ def getCopyableObjectsInSelection():
 def addOffsets(objects,linked_obj, linked_placement):
 	linked_obj.Placement = linked_placement
 
-def createGroup(objects, target_document):
+def createGroup(objects, target_document, linked_obj, edit_selection):
 	if FreeCAD.ActiveDocument.getObjectsByLabel("AssemblyContext"):
 		App.ActiveDocument.removeObject(FreeCAD.ActiveDocument.getObjectsByLabel("AssemblyContext")[0].Name)
 
 	group = App.ActiveDocument.addObject("App::DocumentObjectGroup", "Group")
+	group.addProperty("App::PropertyString", "EditedPart")
+	group.EditedPart = linked_obj.Name
+	group.addProperty("App::PropertyString", "EditedPartLink")
+	group.EditedPartLink = App.ActiveDocument.Name + "." + edit_selection.Name
 	
 	for obj in objects:
 		group.addObject(obj)
@@ -67,10 +84,33 @@ def _removeChildren(obj):
 	for child in obj.OutList:
 		App.ActiveDocument.removeObject(child.Name)
 
-def createContext(linkedObj, target_document, objects, linked_placement):
-	objects = App.ActiveDocument.copyObject(objects, True)
+'''
+def addProperties(objects, copiedObjects):
+	objectNames = []
+	for obj in objects:
+		objectsNames.append(obj.Label)
+	for copiedObj in copiedObjects:
+		if copiedObj.Label in objectNames:
+			propertyString = App.ActiveDocument.Name + "." + copiedObj.Name
+			copiedObj.addProperty("App::PropertyString")
+'''
+
+def createCopy(objects):
+	copiedObjects = []
+	for obj in objects:
+		propertyString = App.ActiveDocument.Name + "." + obj.Name
+		copiedObj = App.ActiveDocument.copyObject(obj, True)
+		copiedObj.addProperty("App::PropertyString", "RefObj")
+		copiedObj.RefObj = propertyString
+		copiedObjects.append(copiedObj)
+		
+		
+	return copiedObjects
+
+def createContext(linkedObj, target_document, normalObjects, linked_placement, edit_selection):
+	objects = createCopy(normalObjects)
 	addOffsets(objects, linkedObj, linked_placement)
-	createGroup(objects, target_document)
+	createGroup(objects, target_document, linkedObj, edit_selection)
 
 def _copy_selection_test():
 	objects = App.ActiveDocument.copyObject(Gui.Selection.getSelection(), True)
@@ -128,18 +168,41 @@ class dialogFenster(QtGui.QWidget):
 
 	def createGridLayout(self):
 		self.horizontalGroupBox = QtGui.QGroupBox("Assembly Context Creator")
-		layout = QtGui.QGridLayout()
+		self.layout = QtGui.QGridLayout()
 		
 		label = QtGui.QLabel(self.horizontalGroupBox)
 		label.setText("In Assembly 3, select the 'Parts' object,\n In the default assembly wb, select the 'Assembly' Object")
 
+		self.updateButton = QtGui.QPushButton(self.horizontalGroupBox)
+		self.updateButton.setText("Update Selected Context")
+		self.updateButton.clicked.connect(self.UpdateContext)
 		self.PB_01= QtGui.QPushButton(self.horizontalGroupBox)
 		self.PB_01.setText("Select the Assembly Part")
 		self.PB_01.clicked.connect(self.SelectPartButton) # slot: "PB 01"
-		layout.addWidget(self.PB_01,1,0)
-		layout.addWidget(label, 0,0)
+		self.layout.addWidget(self.PB_01,1,0)
+		self.layout.addWidget(self.updateButton,2,0)
+		self.layout.addWidget(label, 0,0)
         
-		self.horizontalGroupBox.setLayout(layout)
+		self.horizontalGroupBox.setLayout(self.layout)
+
+	def UpdateContext(self):
+		selection = Gui.Selection.getSelection()[0]
+		if "EditedPart" in selection.PropertiesList:
+			self.editedPart = App.ActiveDocument.getObject(selection.EditedPart)
+			self.objectToUpdate = getCopyableObjectsInSelection()
+			
+			EditedPartLink = getObjFromRefString(selection.EditedPartLink)
+			self.editedPart.Placement = EditedPartLink.Placement
+			
+			for obj in self.objectToUpdate:
+				if "RefObj" in obj.PropertiesList:
+					refObj = getObjFromRefString(obj.RefObj)
+					assemblyDocument = refObj.Document
+					
+					try:
+						obj.Placement = refObj.Placement
+					except:
+						print("could not update position of " + refObj.Label)
 
 	def SelectPartButton(self): # slot: PushButton
 		''' Push Button 01 clicked  '''
@@ -155,6 +218,8 @@ class dialogFenster(QtGui.QWidget):
 					print(self.objects)
 				else:
 					self.PB_01.setText("Select the Part to Edit")
+					self.layout.removeWidget(self.updateButton)
+					self.updateButton = None
 					self.current_selection = 2
 			else:
 				self.edit_selection = selection[0]
@@ -167,7 +232,7 @@ class dialogFenster(QtGui.QWidget):
 				else:
 					if self.edit_selection in self.objects:
 						print("in objects")
-						#self.objects.remove(self.edit_selection)
+						self.objects.remove(self.edit_selection)
 					linked_placement = self.edit_selection.Placement
 					target_document = getLinkedDoc(self.edit_selection)
 					linked_object = getLinkedObj(self.edit_selection)
@@ -177,7 +242,7 @@ class dialogFenster(QtGui.QWidget):
 					if target_document is None:
 						print("Could not locate the document of the original part.\n The selected part must be a link or have a link as a child")
 					else:
-						createContext(linked_object, target_document, self.objects, linked_placement)
+						createContext(linked_object, target_document, self.objects, linked_placement, self.edit_selection)
 				
 				FreeCADGui.Control.closeDialog()
 		else:
