@@ -122,6 +122,7 @@ def updateShape(obj, refObj):
 	obj.Shape = refObj.Shape
 	obj.recompute(True)
 	App.ActiveDocument=App.ActiveDocument
+	documentFileName = App.ActiveDocument.FileName
 	
 def move_group_to_doc(dest_doc, group, deleteOriginal):
 	# Get the source and destination documents
@@ -214,6 +215,10 @@ class dialogFenster(QtGui.QWidget):
 					except:
 						print("could not update object: " + refObj.Label)
 			App.ActiveDocument.recompute()
+			documentFileName = App.ActiveDocument.FileName
+			App.ActiveDocument.save()
+			App.closeDocument(App.ActiveDocument.Name)
+			App.openDocument(documentFileName)
 
 	def SelectPartButton(self): # slot: PushButton
 		''' Push Button 01 clicked  '''
