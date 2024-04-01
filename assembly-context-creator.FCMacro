@@ -57,7 +57,7 @@ def getCopyableObjectsInSelection():
 	objects = []
 	
 	for obj in sel:
-		if type(obj).__name__ in COPYABLE_OBJECT_TYPES:
+		if type(obj).__name__ in COPYABLE_OBJECT_TYPES and "Placement" in obj.PropertiesList:
 			objects.append(obj)
 	return objects
 
@@ -99,7 +99,9 @@ def createCopy(objects):
 	copiedObjects = []
 	for obj in objects:
 		propertyString = App.ActiveDocument.Name + "." + obj.Name
-		copiedObj = App.ActiveDocument.copyObject(obj, True)
+		#copiedObj = App.ActiveDocument.copyObject(obj, True)
+		copiedObj = App.ActiveDocument.addObject("Part::Feature", obj.Label)
+		copiedObj.Shape = obj.Shape
 		copiedObj.addProperty("App::PropertyString", "RefObj")
 		copiedObj.RefObj = propertyString
 		copiedObjects.append(copiedObj)
@@ -201,8 +203,9 @@ class dialogFenster(QtGui.QWidget):
 					
 					try:
 						obj.Placement = refObj.Placement
+						obj.Shape = refObj.Shape
 					except:
-						print("could not update position of " + refObj.Label)
+						print("could not update object: " + refObj.Label)
 
 	def SelectPartButton(self): # slot: PushButton
 		''' Push Button 01 clicked  '''
