@@ -118,6 +118,11 @@ def _copy_selection_test():
 	objects = App.ActiveDocument.copyObject(Gui.Selection.getSelection(), True)
 	createGroup(objects)
 	
+def updateShape(obj, refObj):
+	obj.Shape = refObj.Shape
+	obj.recompute(True)
+	App.ActiveDocument=App.ActiveDocument
+	
 def move_group_to_doc(dest_doc, group, deleteOriginal):
 	# Get the source and destination documents
 	source_doc = FreeCAD.ActiveDocument
@@ -203,9 +208,12 @@ class dialogFenster(QtGui.QWidget):
 					
 					try:
 						obj.Placement = refObj.Placement
-						obj.Shape = refObj.Shape
+						#obj.Shape = Part.Shape()
+						updateShape(obj, refObj)
+						App.ActiveDocument.recompute()
 					except:
 						print("could not update object: " + refObj.Label)
+			App.ActiveDocument.recompute()
 
 	def SelectPartButton(self): # slot: PushButton
 		''' Push Button 01 clicked  '''
